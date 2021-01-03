@@ -1,0 +1,13 @@
+{
+    "Server": {
+        "port": 3400
+    },
+    "Redis": {
+        "host": "127.0.0.1",
+        "port": 6379
+    },
+    "RabbitMq": {
+        "url": "amqp://localhost",
+        "exchangeName": "ofer_test2"
+    }
+}

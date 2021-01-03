@@ -1,0 +1,29 @@
+{
+  "name": "livescore-manager",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "tsc": "tsc"
+  },
+  "author": "Ofer Lazmi",
+  "license": "ISC",
+  "dependencies": {
+    "@types/express": "^4.17.7",
+    "amqplib": "^0.6.0",
+    "body-parser": "^1.19.0",
+    "collectors-framework": "^1.0.24",
+    "config": "^3.3.3",
+    "cors": "^2.8.5",
+    "express": "^4.17.1",
+    "redis": "^3.0.2",
+    "rxjs": "^6.6.3",
+    "statman-stopwatch": "^2.11.1",
+    "typescript": "^3.9.7"
+  },
+  "optionalDependencies": {
+    "bufferutil": "^4.0.2",
+    "utf-8-validate": "^5.0.3"
+  }
+}
