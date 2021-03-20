@@ -11,6 +11,7 @@
             "skipFiles": [
                 "<node_internals>/**"
             ],
+            "internalConsoleOptions": "openOnSessionStart",
             "program": "${workspaceFolder}\\dist\\server\\server.js",
             "preLaunchTask": "tsc: build - tsconfig.json",
             "outFiles": [
