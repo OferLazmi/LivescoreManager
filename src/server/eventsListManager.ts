@@ -15,10 +15,12 @@ interface IStatResult {
     home: number,
     homeHT: number,
     away: number,
-    awayHT: number
+    awayHT: number,
+    minute: number
 };
 
 export class EventsListManager implements IErrorNotifier, IChangeNotifier {
+    private columnsCount: number = 21;
     private appConfig: IAppConfig;
     private redisConfig: IRedisConfig;
     private rmqServerUrl: string;
@@ -42,9 +44,7 @@ export class EventsListManager implements IErrorNotifier, IChangeNotifier {
         });
 
         this.appConfig = ConfigurationManager.getAppConfig();
-        this.queueManager = new QueueManager(async (data) => {
-            await this.handleEventRequest(data);
-        });
+        this.queueManager = new QueueManager(this.handleEventRequest.bind(this));
     }
 
     public onError(error: string): void {
@@ -56,13 +56,16 @@ export class EventsListManager implements IErrorNotifier, IChangeNotifier {
             console.log(this.redisClient.ready);
 
             this.fixturesDataSheetUpdater = new FixturesDataSheetUpdater();
-            await this.fixturesDataSheetUpdater.init();
+            await this.fixturesDataSheetUpdater.init(this.columnsCount);
             if (this.appConfig.clearRowsOnStart) {
                 await this.fixturesDataSheetUpdater.clearRows();
             }
 
-            const connectionParams: RMQConnectionParameters = new RMQConnectionParameters(this.rmqServerUrl, true, false);
-            this.consumerService = new RMQConsumerService(connectionParams, (error: any) => {
+            this.consumerService = new RMQConsumerService({
+                connectionUrl: this.rmqServerUrl,
+                durable: false,
+                exclusive: true
+            }, (error: any) => {
                 console.error("Rabbit mq error: ", error);
             }, () => {
                 console.error("Rabbit mq closed");
@@ -120,6 +123,10 @@ export class EventsListManager implements IErrorNotifier, IChangeNotifier {
             return;
         }
 
+        if (stat.minute) {
+            counts.minute = stat.minute;
+        }
+
         let team = stat.team;
         if (!team) {
             if (stat.name.includes(homeName)) {
@@ -148,20 +155,24 @@ export class EventsListManager implements IErrorNotifier, IChangeNotifier {
             home: 0,
             homeHT: 0,
             away: 0,
-            awayHT: 0
+            awayHT: 0,
+            minute: 0
         };
         var corners: IStatResult = {
             home: 0,
             homeHT: 0,
             away: 0,
-            awayHT: 0
+            awayHT: 0,
+            minute: 0
         };
         var yellowCards: IStatResult = {
             home: 0,
             homeHT: 0,
             away: 0,
-            awayHT: 0
+            awayHT: 0,
+            minute: 0
         };
+
         if (event.stats) {
             for (let index = 0; index < event.stats.length; index++) {
                 const stat = event.stats[index];
@@ -191,6 +202,10 @@ export class EventsListManager implements IErrorNotifier, IChangeNotifier {
                 {
                     name: "FixtureId",
                     value: `https://www.bet365.com/#/IP/${event.urlId}`
+                },
+                {
+                    name: "Minute",
+                    value: goals.minute
                 },
                 {
                     name: "HomeScore",
