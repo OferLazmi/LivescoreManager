@@ -20,6 +20,7 @@ export interface IRabbitMqConfig {
 export interface IGoogleSheetConfig {
     serviceAccountEmail: string;
     privateKey: string;
+    documentName: string;
 }
 
 

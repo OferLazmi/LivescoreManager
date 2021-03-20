@@ -56,7 +56,7 @@ export class EventsListManager implements IErrorNotifier, IChangeNotifier {
             console.log(this.redisClient.ready);
 
             this.fixturesDataSheetUpdater = new FixturesDataSheetUpdater();
-            await this.fixturesDataSheetUpdater.init('1tSf-r2UkeWyTWM3h46ztFTfXkBDgIJnMl4sOG-fuL34');
+            await this.fixturesDataSheetUpdater.init();
             if (this.appConfig.clearRowsOnStart) {
                 await this.fixturesDataSheetUpdater.clearRows();
             }

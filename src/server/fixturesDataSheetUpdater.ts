@@ -18,10 +18,10 @@ export class FixturesDataSheetUpdater {
             console.log(`${rows.length} rows Saved`, rows);
         });
     }
-    public async init(documentName: string) {
+    public async init() {
         const googleSheetConfig = ConfigurationManager.getGoogleSheetConfig();
         const googleSpreadSheetManager = new GoogleSpreadSheetManager(googleSheetConfig.serviceAccountEmail, googleSheetConfig.serviceAccountEmail)
-        const document: GoogleDocument = await googleSpreadSheetManager.loadDocument(documentName);
+        const document: GoogleDocument = await googleSpreadSheetManager.loadDocument(googleSheetConfig.documentName);
         this.sheet = await document.getSheet(this.sheetName);
         await this.sheet.loadCells('A1:T1000');
 
