@@ -1,13 +1,22 @@
 {
     "Server": {
-        "port": 3400
+        "port": 3600
+    },
+    "App": {
+        "clearRowsOnStart": true,
+        "handleSportIds": ["1"]
     },
     "Redis": {
-        "host": "127.0.0.1",
-        "port": 6379
+        "host": "365.gameon.ltd",
+        "port": 6379,
+        "password": "nH6HpXTPURD7TAkG"
     },
     "RabbitMq": {
-        "url": "amqp://localhost",
-        "exchangeName": "ofer_test2"
+        "url": "amqp://rmq:JfA3H1Fa5ha5Fa@365.gameon.ltd",
+        "exchangeName": "robot_markets"
+    },
+    "GoogleSheet": {
+        "serviceAccountEmail": "rusultingagent@resultingservice.iam.gserviceaccount.com",
+        "privateKey": "-----BEGIN PRIVATE KEY-----\nMIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQDQQi2Rm5EdWNII\nGvID9H0xn2CSxbgQUDh9knCwJlYescWR/003qs/UjVRUY+Ei16VYeksqSSwYM+uZ\nGBQT3hinargrffcA118qMx8jNxUP/xZoMaYbWrG2Ibm0NQP+K7WCir7ITT8UhgSZ\nJtWgrnS6atjKA+fgbzapsFtAwfuOeFII6T/xEychGElB/o0B41qFh1xrFgesET+4\nEbzeTBKJiHjRWtcJx1vrRT7FHkKXdxV9wliOthwqvZEsVWL9hFsR7qq9kjz1EbHk\nmYWmTiLGQgCkDi+9t8JgBJJh6v3s8ChTdwBuBzGK1fVvAP1rRf5aErneo8R/hd02\nZ6yKR5CfAgMBAAECggEAXgDhLM55rDOBaqMvBtX/BL0aDGYu9T4goZ3OO9SyHtzD\nf2kr46q4cQryO71xzBZmzg81inrI6ovVFp+lwGoJ2tfzFb6gFcMhc5zruyuL2FKe\nPJ3cipBfkwSaHFup17rHDYuvHh6wEIWF4dODrinRCqxb+qPUsJvCosm2Bv8Im3+n\nhuxZhyfOUO3XaU5xWVaNQ0dOnBPZ2IsmezeCH9PqgDYUT8QmenqoeOeiUWHdRh78\nFIKE8CHTc2YjW+Jx4t90UfWQ3lijWVhUAn7o91jUp5rfdUJ7KqEKW4bijG8e430M\neBKigFjCYpE6lavwxUpYqKzD5cHAkTVamktB41y1MQKBgQDuyLezCIPfdGfMbJRC\nOu7SpbA/rnxltANf4eyc5v9gkDKR+q3kSZhybsnSxPyAmG7HBwxPEN00D1BS5IlG\nINBgnkDgHvFOgxmSREDCMxrjD3Oy8M+RFvlqUZGO6vnnjLDpDghlXBTHxVUg58FQ\nZtyDnZeXVr9nsjT57qV9RPaalQKBgQDfRgtvSB83ZhtTbGSBb+o+pX2dTfbsKgfT\nN0bPxG56LCVz3TJWZ1mEA6fBAftzLTCvFJIPE42n5t3Oinxt9IY5MqMWjMEBZbxC\n6O2C9XXrKV7U+hp1wrp+O4ruqqAyTjZ9YRkDes3aS6RntMxidjf2UpRUguSi+heM\nczPPFfllYwKBgEKlm0BJPCV+ZApWs/rYYBhDTrI3jVkFqXt1n4kboGPfW34LLcXu\nFLK74XEGskNiSGkcun7HAjapn43DY91DA2Y0RX9Io6l6RgThMAIEKZj+kxh6xjSE\n6RCXu7zcMOxEBIzH8ef4j4RCu8P3a6l5TEsgDVOcTsguoUKxLVeNjBcRAoGALQjw\n14JhoYf77QjJAP607evteWQ3cQ1NRMI6iz/g1M3AxC0SsTDpcmJWXOzsbh/oWPg6\nOcZE5WAAz19Jl9ghlrnrAWpkp8aAgbJ/7dFa9pMCqMzFt4kOmtWhwWAzLdJu1T1X\nkUcc7HIjeDOUoiucQBgKCT3ZpjHxvAekpJmXE2cCgYAiVWZRNSVdjhchfg42IzPQ\n6B1PTKD+4vWmxGsPygvVWjwmTGW5ShV2AXaxaR61UXBT53N9LulsPkm71nNwwTC2\nQWlmHx0VnaXuA1pQU3YhwFR/onlfRFtQkWceDIwQ+s5g29nu+L20z0MzOAqiFPPz\nAjsyWE4eMtYt23WfAr5UEg==\n-----END PRIVATE KEY-----\n"
     }
 }

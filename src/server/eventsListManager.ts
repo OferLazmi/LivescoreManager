@@ -2,59 +2,282 @@ import {
     RedisClient,
     RMQConsumerService,
     RMQConnectionParameters,
-    IEventsDataReceiver,
-    IEventDataInfo
+    IQueueManager,
+    GoogleSheetRowBase,
 } from "collectors-framework"
-import { ConfigurationManager } from "../configuration/configurationManager";
+import { ConfigurationManager, IAppConfig, IRedisConfig } from "../configuration/configurationManager";
+import { FixturesDataSheetUpdater } from "./fixturesDataSheetUpdater";
+import moment from 'moment';
+import { IChangeNotifier, IErrorNotifier } from "collectors-framework/lib/redis/redis-client";
+import { QueueManager } from "collectors-framework/lib/queue/queueManager";
 
-const Stopwatch = require('statman-stopwatch');
+interface IStatResult {
+    home: number,
+    homeHT: number,
+    away: number,
+    awayHT: number
+};
 
-export class EventsListManager {
-
-    redisHost: string;
-    redisPort: number;
-    rmqServerUrl: string;
-    exchangeName: string;
-    internalSocketPort: number;
-    maxEventsInDataReceiver: number;
-
-    activeEvents = new Map();
-    eventsDataReceivers: IEventsDataReceiver[] = [];
-    consumerService: RMQConsumerService;
-    runningEvents = new Map();
+export class EventsListManager implements IErrorNotifier, IChangeNotifier {
+    private appConfig: IAppConfig;
+    private redisConfig: IRedisConfig;
+    private rmqServerUrl: string;
+    private exchangeName: string;
+    private consumerService: RMQConsumerService;
+    private redisClient: RedisClient;
+    private fixturesDataSheetUpdater: FixturesDataSheetUpdater;
+    private queueManager: IQueueManager;
 
     constructor() {
-        this.redisHost = ConfigurationManager.getRedisConfig().host;
-        this.redisPort = ConfigurationManager.getRedisConfig().port;
+        this.redisConfig = ConfigurationManager.getRedisConfig();
         this.rmqServerUrl = ConfigurationManager.getRabbitMqConfig().url;
         this.exchangeName = ConfigurationManager.getRabbitMqConfig().exchangeName;
 
-        // const redisClient: RedisClient = new RedisClient(this.redisHost, this.redisPort);
-        // console.log(redisClient.ready);
+        this.redisClient = new RedisClient({
+            host: this.redisConfig.host,
+            port: this.redisConfig.port,
+            password: this.redisConfig.password,
+            changeNotifier: this,
+            errorNotifier: this
+        });
 
-        // redisClient.get("Ofer").then((data) => {
-        //     console.log(data);
-        // });
+        this.appConfig = ConfigurationManager.getAppConfig();
+        this.queueManager = new QueueManager(async (data) => {
+            await this.handleEventRequest(data);
+        });
     }
 
-    public start() {
-        const connectionParams: RMQConnectionParameters = new RMQConnectionParameters(this.rmqServerUrl, true, false);
-        this.consumerService = new RMQConsumerService(connectionParams);
-        this.consumerService.consumeFromExchange(this.exchangeName, this.onRmqDataArrived);
+    public onError(error: string): void {
+        console.error(`Redis error:`, error);
     }
 
-    private onRmqDataArrived(message: string, rawMessage: any) {
-        console.log(message);
+    public async start() {
+        try {
+            console.log(this.redisClient.ready);
 
-        const stopwatch = new Stopwatch();
-        stopwatch.start();
+            this.fixturesDataSheetUpdater = new FixturesDataSheetUpdater();
+            await this.fixturesDataSheetUpdater.init('1tSf-r2UkeWyTWM3h46ztFTfXkBDgIJnMl4sOG-fuL34');
+            if (this.appConfig.clearRowsOnStart) {
+                await this.fixturesDataSheetUpdater.clearRows();
+            }
 
-        let eventDataInfo = JSON.parse(message) as IEventDataInfo;
-        if (eventDataInfo) {
-            
+            const connectionParams: RMQConnectionParameters = new RMQConnectionParameters(this.rmqServerUrl, true, false);
+            this.consumerService = new RMQConsumerService(connectionParams, (error: any) => {
+                console.error("Rabbit mq error: ", error);
+            }, () => {
+                console.error("Rabbit mq closed");
+            }, (error: any) => {
+                console.error("Rabbit mq error: ", error);
+            }, () => {
+                console.error("Rabbit mq channel closed");
+            });
+            this.consumerService.consumeFromExchange(this.exchangeName, this.onRmqDataArrived.bind(this));
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    public async onKeyExpire(key: string): Promise<void> {
+        console.log("onKeyExpire", key);
+        if (this.fixturesDataSheetUpdater) {
+            await this.fixturesDataSheetUpdater.clearRow(key);
+        }
+    }
+
+    public onKeyInserted(key: string, value): void {
+        // console.log("onKeyInserted", key, value);
+    }
+
+    private onRmqDataArrived(message: string, rawMessage: any): Promise<void> {
+        return new Promise<void>(async (resolve, reject) => {
+            try {
+                let eventDataInfo = JSON.parse(message);
+                if (!eventDataInfo || (
+                    this.appConfig.handleSportIds &&
+                    this.appConfig.handleSportIds.length > 0 &&
+                    !this.appConfig.handleSportIds.includes(eventDataInfo.sportId))) {
+                    return;
+                }
+
+                if (eventDataInfo) {
+                    console.log(eventDataInfo);
+                    // this.handleEventRequest(eventDataInfo);
+                    this.queueManager.enqueue(eventDataInfo);
+                }
+
+                // console.log(`Resulting Manager received event. took: ${delta}`);
+                resolve();
+            } catch (error) {
+                reject(error);
+            }
+        });
+    }
+
+    private handleStat(stat, event, counts: IStatResult) {
+        const homeName = event.homeTeam;
+        const period = stat.period;
+        if (!period) {
+            return;
         }
 
-        stopwatch.stop();
-        const delta = stopwatch.read();
+        let team = stat.team;
+        if (!team) {
+            if (stat.name.includes(homeName)) {
+                team = "1";
+            } else {
+                team = "2";
+            }
+        }
+
+        if (team === '1') {
+            counts.home++;
+            if (period === '0') {
+                counts.homeHT++;
+            }
+        } else {
+            counts.away++;
+            if (period === '0') {
+                counts.awayHT++;
+            }
+        }
+    }
+
+    private async handleEventRequest(event: any) {
+
+        var goals: IStatResult = {
+            home: 0,
+            homeHT: 0,
+            away: 0,
+            awayHT: 0
+        };
+        var corners: IStatResult = {
+            home: 0,
+            homeHT: 0,
+            away: 0,
+            awayHT: 0
+        };
+        var yellowCards: IStatResult = {
+            home: 0,
+            homeHT: 0,
+            away: 0,
+            awayHT: 0
+        };
+        if (event.stats) {
+            for (let index = 0; index < event.stats.length; index++) {
+                const stat = event.stats[index];
+
+                switch (stat.type) {
+                    case "Corner":
+                        this.handleStat(stat, event, corners);
+                        break;
+
+                    case "Goal":
+                        this.handleStat(stat, event, goals);
+                        break;
+
+                    case "YellowCard":
+                        this.handleStat(stat, event, yellowCards);
+                        break;
+
+                    default:
+                        break;
+                }
+            }
+        }
+
+        const row: GoogleSheetRowBase = {
+            rowId: `https://www.bet365.com/#/IP/${event.urlId}`,
+            columns: [
+                {
+                    name: "FixtureId",
+                    value: `https://www.bet365.com/#/IP/${event.urlId}`
+                },
+                {
+                    name: "HomeScore",
+                    value: goals.home
+                },
+                {
+                    name: "AwayScore",
+                    value: goals.away
+                },
+                {
+                    name: "HomeHTScore",
+                    value: goals.homeHT
+                },
+                {
+                    name: "AwayHTScore",
+                    value: goals.awayHT
+                },
+                {
+                    name: "HomeFTScore",
+                    value: goals.home
+                },
+                {
+                    name: "AwayFTScore",
+                    value: goals.away
+                },
+                {
+                    name: "HomeCorners",
+                    value: corners.home
+                },
+                {
+                    name: "AwayCorners",
+                    value: corners.away
+                },
+                {
+                    name: "HomeCornersHT",
+                    value: corners.homeHT
+                },
+                {
+                    name: "AwayCornersHT",
+                    value: corners.awayHT
+                },
+                {
+                    name: "HomeCornersFT",
+                    value: corners.home
+                },
+                {
+                    name: "AwayCornersFT",
+                    value: corners.away
+                },
+                {
+                    name: "HomeYellowCard",
+                    value: yellowCards.home
+                },
+                {
+                    name: "AwayYellowCard",
+                    value: yellowCards.away
+                },
+                {
+                    name: "FixtHomeYellowCardHTureId",
+                    value: yellowCards.homeHT
+                },
+                {
+                    name: "AwayYellowCardHT",
+                    value: yellowCards.awayHT
+                },
+                {
+                    name: "HomeYellowCardFT",
+                    value: yellowCards.home
+                },
+                {
+                    name: "AwayYellowCardFT",
+                    value: yellowCards.away
+                },
+                {
+                    name: "LastUpdate",
+                    value: moment(new Date()).format("HH:mm:ss")
+                }
+            ]
+        };
+
+        await this.fixturesDataSheetUpdater.addOrUpdateFixture(row);
+        await this.redisClient.setWithExpire(row.rowId, row.rowId, 60);
+    }   
+
+    private async wait(ms) {
+        return new Promise(resolve => {
+            setTimeout(resolve, ms);
+        });
     }
 }
