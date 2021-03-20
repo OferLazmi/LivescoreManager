@@ -36,7 +36,7 @@ export class FixturesDataSheetUpdater {
         if (!this.sheet || this.sheet.rows.length === 0) return;
         
         console.log(`start clearing ${rowId} row...`);
-        await this.sheet.clearRow("FixtureId", rowId);
+        await this.sheet.clearRow("FixtureId", rowId, true);
         console.log(`row ${rowId} cleared!!!!`);
     }
 

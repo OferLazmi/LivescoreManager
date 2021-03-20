@@ -1,25 +1,22 @@
 import {
     RedisClient,
     RMQConsumerService,
-    RMQConnectionParameters,
     IQueueManager,
     GoogleSheetRowBase,
 } from "collectors-framework"
 import { ConfigurationManager, IAppConfig, IRedisConfig } from "../configuration/configurationManager";
 import { FixturesDataSheetUpdater } from "./fixturesDataSheetUpdater";
 import moment from 'moment';
-import { IChangeNotifier, IErrorNotifier } from "collectors-framework/lib/redis/redis-client";
 import { QueueManager } from "collectors-framework/lib/queue/queueManager";
 
 interface IStatResult {
     home: number,
     homeHT: number,
     away: number,
-    awayHT: number,
-    minute: number
+    awayHT: number
 };
 
-export class EventsListManager implements IErrorNotifier, IChangeNotifier {
+export class EventsListManager {
     private columnsCount: number = 21;
     private appConfig: IAppConfig;
     private redisConfig: IRedisConfig;
@@ -27,6 +24,7 @@ export class EventsListManager implements IErrorNotifier, IChangeNotifier {
     private exchangeName: string;
     private consumerService: RMQConsumerService;
     private redisClient: RedisClient;
+    private livescoreRedisClient: RedisClient;
     private fixturesDataSheetUpdater: FixturesDataSheetUpdater;
     private queueManager: IQueueManager;
 
@@ -35,26 +33,12 @@ export class EventsListManager implements IErrorNotifier, IChangeNotifier {
         this.rmqServerUrl = ConfigurationManager.getRabbitMqConfig().url;
         this.exchangeName = ConfigurationManager.getRabbitMqConfig().exchangeName;
 
-        this.redisClient = new RedisClient({
-            host: this.redisConfig.host,
-            port: this.redisConfig.port,
-            password: this.redisConfig.password,
-            changeNotifier: this,
-            errorNotifier: this
-        });
-
         this.appConfig = ConfigurationManager.getAppConfig();
         this.queueManager = new QueueManager(this.handleEventRequest.bind(this));
     }
 
-    public onError(error: string): void {
-        console.error(`Redis error:`, error);
-    }
-
     public async start() {
         try {
-            console.log(this.redisClient.ready);
-
             this.fixturesDataSheetUpdater = new FixturesDataSheetUpdater();
             await this.fixturesDataSheetUpdater.init(this.columnsCount);
             if (this.appConfig.clearRowsOnStart) {
@@ -75,22 +59,52 @@ export class EventsListManager implements IErrorNotifier, IChangeNotifier {
                 console.error("Rabbit mq channel closed");
             });
             this.consumerService.consumeFromExchange(this.exchangeName, this.onRmqDataArrived.bind(this));
+
+            this.redisClient = new RedisClient({
+                host: this.redisConfig.host,
+                port: this.redisConfig.port,
+                password: this.redisConfig.password,
+                database: 0,
+                onErrorCallback: (error) => {
+                    console.error(`Redis error:`, error);
+                },
+                onKeyExpireCallback: async (key) => {
+                    console.log("[database 0]: onKeyExpire", key);
+                    if (this.fixturesDataSheetUpdater) {
+                        await this.fixturesDataSheetUpdater.clearRow(key);
+                    }
+                },
+                onKeyInsertedCallback: async (key, value) => {
+                    console.log("[database 0]: onKeyInserted: ", key);
+                    await this.onRmqDataArrived(value, null);
+                }
+            });
+
+            this.livescoreRedisClient = new RedisClient({
+                host: this.redisConfig.host,
+                port: this.redisConfig.port,
+                password: this.redisConfig.password,
+                database: 2,
+                onErrorCallback: (error) => {
+                    console.error(`Redis error:`, error);
+                },
+                onKeyExpireCallback: async (key) => {
+                    console.log("[database 2]: onKeyExpire", key);
+                    if (this.fixturesDataSheetUpdater) {
+                        await this.fixturesDataSheetUpdater.clearRow(key);
+                    }
+                },
+                onKeyInsertedCallback: async (key, value) => {
+                    console.log("[database 2]: onKeyInserted: ", key);
+                }
+            });
+
+            console.log(this.redisClient.ready);
         } catch (error) {
             throw error;
         }
     }
-
-    public async onKeyExpire(key: string): Promise<void> {
-        console.log("onKeyExpire", key);
-        if (this.fixturesDataSheetUpdater) {
-            await this.fixturesDataSheetUpdater.clearRow(key);
-        }
-    }
-
-    public onKeyInserted(key: string, value): void {
-        // console.log("onKeyInserted", key, value);
-    }
-
+    
     private onRmqDataArrived(message: string, rawMessage: any): Promise<void> {
         return new Promise<void>(async (resolve, reject) => {
             try {
@@ -123,10 +137,6 @@ export class EventsListManager implements IErrorNotifier, IChangeNotifier {
             return;
         }
 
-        if (stat.minute) {
-            counts.minute = stat.minute;
-        }
-
         let team = stat.team;
         if (!team) {
             if (stat.name.includes(homeName)) {
@@ -151,26 +161,26 @@ export class EventsListManager implements IErrorNotifier, IChangeNotifier {
 
     private async handleEventRequest(event: any) {
 
+        const notStarted = !event.isPlaying && event.currentPeriod === "0";
+        if (notStarted) return;
+
         var goals: IStatResult = {
             home: 0,
             homeHT: 0,
             away: 0,
-            awayHT: 0,
-            minute: 0
+            awayHT: 0
         };
         var corners: IStatResult = {
             home: 0,
             homeHT: 0,
             away: 0,
-            awayHT: 0,
-            minute: 0
+            awayHT: 0
         };
         var yellowCards: IStatResult = {
             home: 0,
             homeHT: 0,
             away: 0,
-            awayHT: 0,
-            minute: 0
+            awayHT: 0
         };
 
         if (event.stats) {
@@ -186,7 +196,7 @@ export class EventsListManager implements IErrorNotifier, IChangeNotifier {
                         this.handleStat(stat, event, goals);
                         break;
 
-                    case "YellowCard":
+                    case "Yellow Card":
                         this.handleStat(stat, event, yellowCards);
                         break;
 
@@ -204,8 +214,8 @@ export class EventsListManager implements IErrorNotifier, IChangeNotifier {
                     value: `https://www.bet365.com/#/IP/${event.urlId}`
                 },
                 {
-                    name: "Minute",
-                    value: goals.minute
+                    name: "IsEnded",
+                    value: !event.isPlaying && event.currentPeriod === "90"
                 },
                 {
                     name: "HomeScore",
@@ -287,8 +297,8 @@ export class EventsListManager implements IErrorNotifier, IChangeNotifier {
         };
 
         await this.fixturesDataSheetUpdater.addOrUpdateFixture(row);
-        await this.redisClient.setWithExpire(row.rowId, row.rowId, 60);
-    }   
+        await this.livescoreRedisClient.setWithExpire(row.rowId, JSON.stringify(row, null, 4), 60);
+    }
 
     private async wait(ms) {
         return new Promise(resolve => {
