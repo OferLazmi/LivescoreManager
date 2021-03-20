@@ -20,7 +20,7 @@ export class FixturesDataSheetUpdater {
     }
     public async init(columnNumber: number) {
         const googleSheetConfig = ConfigurationManager.getGoogleSheetConfig();
-        const googleSpreadSheetManager = new GoogleSpreadSheetManager(googleSheetConfig.serviceAccountEmail, googleSheetConfig.serviceAccountEmail)
+        const googleSpreadSheetManager = new GoogleSpreadSheetManager(googleSheetConfig.serviceAccountEmail, googleSheetConfig.privateKey)
         const document: GoogleDocument = await googleSpreadSheetManager.loadDocument(googleSheetConfig.documentName);
         this.sheet = await document.getSheet(this.sheetName);
         await this.sheet.loadCells(`A1:${this.getColumnName(columnNumber)}1000`);
