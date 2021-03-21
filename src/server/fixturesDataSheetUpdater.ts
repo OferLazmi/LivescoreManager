@@ -32,11 +32,11 @@ export class FixturesDataSheetUpdater {
         this.dataThrottler.addJob(row.rowId, row);
     }
 
-    public async clearRow(rowId: string) {
+    public async clearRow(rowId: string, shouldOnlyMarkRow?: boolean) {
         if (!this.sheet || this.sheet.rows.length === 0) return;
         
         console.log(`start clearing ${rowId} row...`);
-        await this.sheet.clearRow("FixtureId", rowId, true);
+        await this.sheet.clearRow("FixtureId", rowId, shouldOnlyMarkRow);
         console.log(`row ${rowId} cleared!!!!`);
     }
 
@@ -47,6 +47,11 @@ export class FixturesDataSheetUpdater {
         await this.sheet.clearAllRows();
         await this.sheet.save();
         console.log("all rows cleared!!!!");
+    }
+
+    public async save() {
+        if (!this.sheet || this.sheet.rows.length === 0) return;
+        await this.sheet.save();
     }
 
     private getColumnName(characterNumber: number) {        

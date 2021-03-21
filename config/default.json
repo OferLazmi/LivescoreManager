@@ -4,7 +4,7 @@
     },
     "App": {
         "clearRowsOnStart": true,
-        "handleSportIds": ["1"]
+        "handleSportIds": ["1", "151"]
     },
     "Redis": {
         "host": "365.gameon.ltd",
@@ -13,7 +13,7 @@
     },
     "RabbitMq": {
         "url": "amqp://rmq:JfA3H1Fa5ha5Fa@365.gameon.ltd",
-        "exchangeName": "robot_markets"
+        "exchangeName": "Bet365Collector.Markets"
     },
     "GoogleSheet": {
         "documentName": "1tSf-r2UkeWyTWM3h46ztFTfXkBDgIJnMl4sOG-fuL34",

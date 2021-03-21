@@ -1,10 +1,12 @@
 import {
     RedisClient,
-    RMQConsumerService,
     IQueueManager,
     GoogleSheetRowBase,
+    IServiceBusSubscriber,
+    ServiceBusFactory,
+    IServiceBusPublisher,
 } from "collectors-framework"
-import { ConfigurationManager, IAppConfig, IRedisConfig } from "../configuration/configurationManager";
+import { ConfigurationManager, IAppConfig, IRabbitMqConfig, IRedisConfig } from "../configuration/configurationManager";
 import { FixturesDataSheetUpdater } from "./fixturesDataSheetUpdater";
 import moment from 'moment';
 import { QueueManager } from "collectors-framework/lib/queue/queueManager";
@@ -20,19 +22,17 @@ export class EventsListManager {
     private columnsCount: number = 21;
     private appConfig: IAppConfig;
     private redisConfig: IRedisConfig;
-    private rmqServerUrl: string;
-    private exchangeName: string;
-    private consumerService: RMQConsumerService;
+    private rmqConfig: IRabbitMqConfig;
     private redisClient: RedisClient;
     private livescoreRedisClient: RedisClient;
     private fixturesDataSheetUpdater: FixturesDataSheetUpdater;
     private queueManager: IQueueManager;
+    private subscriber: IServiceBusSubscriber;
+    private fixturesEndedPublisher: IServiceBusPublisher;
 
     constructor() {
         this.redisConfig = ConfigurationManager.getRedisConfig();
-        this.rmqServerUrl = ConfigurationManager.getRabbitMqConfig().url;
-        this.exchangeName = ConfigurationManager.getRabbitMqConfig().exchangeName;
-
+        this.rmqConfig = ConfigurationManager.getRabbitMqConfig();
         this.appConfig = ConfigurationManager.getAppConfig();
         this.queueManager = new QueueManager(this.handleEventRequest.bind(this));
     }
@@ -45,40 +45,25 @@ export class EventsListManager {
                 await this.fixturesDataSheetUpdater.clearRows();
             }
 
-            this.consumerService = new RMQConsumerService({
-                connectionUrl: this.rmqServerUrl,
-                durable: false,
-                exclusive: true
-            }, (error: any) => {
-                console.error("Rabbit mq error: ", error);
-            }, () => {
-                console.error("Rabbit mq closed");
-            }, (error: any) => {
-                console.error("Rabbit mq error: ", error);
-            }, () => {
-                console.error("Rabbit mq channel closed");
-            });
-            this.consumerService.consumeFromExchange(this.exchangeName, this.onRmqDataArrived.bind(this));
-
-            this.redisClient = new RedisClient({
-                host: this.redisConfig.host,
-                port: this.redisConfig.port,
-                password: this.redisConfig.password,
-                database: 0,
-                onErrorCallback: (error) => {
-                    console.error(`Redis error:`, error);
-                },
-                onKeyExpireCallback: async (key) => {
-                    console.log("[database 0]: onKeyExpire", key);
-                    if (this.fixturesDataSheetUpdater) {
-                        await this.fixturesDataSheetUpdater.clearRow(key);
-                    }
-                },
-                onKeyInsertedCallback: async (key, value) => {
-                    console.log("[database 0]: onKeyInserted: ", key);
-                    await this.onRmqDataArrived(value, null);
-                }
-            });
+            // this.redisClient = new RedisClient({
+            //     host: this.redisConfig.host,
+            //     port: this.redisConfig.port,
+            //     password: this.redisConfig.password,
+            //     database: 0,
+            //     onErrorCallback: (error) => {
+            //         console.error(`Redis error:`, error);
+            //     },
+            //     onKeyExpireCallback: async (key) => {
+            //         console.log("[database 0]: onKeyExpire", key);
+            //         if (this.fixturesDataSheetUpdater) {
+            //             await this.fixturesDataSheetUpdater.clearRow(key);
+            //         }
+            //     },
+            //     onKeyInsertedCallback: async (key, value) => {
+            //         console.log("[database 0]: onKeyInserted: ", key);
+            //         await this.onRmqDataArrived(value, null);
+            //     }
+            // });
 
             this.livescoreRedisClient = new RedisClient({
                 host: this.redisConfig.host,
@@ -89,45 +74,56 @@ export class EventsListManager {
                     console.error(`Redis error:`, error);
                 },
                 onKeyExpireCallback: async (key) => {
-                    console.log("[database 2]: onKeyExpire", key);
+                    // console.log("[database 2]: onKeyExpire", key);
                     if (this.fixturesDataSheetUpdater) {
                         await this.fixturesDataSheetUpdater.clearRow(key);
                     }
                 },
                 onKeyInsertedCallback: async (key, value) => {
-                    console.log("[database 2]: onKeyInserted: ", key);
+                    // console.log("[database 2]: onKeyInserted: ", key);
                 }
             });
 
-            console.log(this.redisClient.ready);
+            this.subscriber = ServiceBusFactory.createSubscriber({
+                url: this.rmqConfig.url,
+                errorCallback: (error) => {
+                    console.error(error);
+                }
+            });
+            this.fixturesEndedPublisher = ServiceBusFactory.createPublisher({
+                url: this.rmqConfig.url,
+                errorCallback: (error) => {
+                    console.error(error);
+                }
+            });
+            this.subscriber.subscribe(this.rmqConfig.exchangeName, async (topic, data) => {
+                try {
+                    let eventDataInfo = JSON.parse(data.data);
+                    if (!eventDataInfo || (
+                        this.appConfig.handleSportIds &&
+                        this.appConfig.handleSportIds.length > 0 &&
+                        !this.appConfig.handleSportIds.includes(eventDataInfo.sportId))) {
+                        return;
+                    }
+
+                    this.queueManager.enqueue(eventDataInfo);
+                } catch (error) {
+                    console.error(error);
+                }
+            });
+
+            this.subscriber.subscribe("fixture.delete", async (topic, data) => {
+                try {
+                    console.log("delete: ", data.data);
+                    await this.fixturesDataSheetUpdater.clearRow(data.data, false);
+                    await this.fixturesDataSheetUpdater.save();
+                } catch (error) {
+                    console.error(error);
+                }
+            });
         } catch (error) {
             throw error;
         }
-    }
-    
-    private onRmqDataArrived(message: string, rawMessage: any): Promise<void> {
-        return new Promise<void>(async (resolve, reject) => {
-            try {
-                let eventDataInfo = JSON.parse(message);
-                if (!eventDataInfo || (
-                    this.appConfig.handleSportIds &&
-                    this.appConfig.handleSportIds.length > 0 &&
-                    !this.appConfig.handleSportIds.includes(eventDataInfo.sportId))) {
-                    return;
-                }
-
-                if (eventDataInfo) {
-                    console.log(eventDataInfo);
-                    // this.handleEventRequest(eventDataInfo);
-                    this.queueManager.enqueue(eventDataInfo);
-                }
-
-                // console.log(`Resulting Manager received event. took: ${delta}`);
-                resolve();
-            } catch (error) {
-                reject(error);
-            }
-        });
     }
 
     private handleStat(stat, event, counts: IStatResult) {
@@ -206,6 +202,7 @@ export class EventsListManager {
             }
         }
 
+        const isFixtureEnded = !event.isPlaying && event.currentPeriod === "90";
         const row: GoogleSheetRowBase = {
             rowId: `https://www.bet365.com/#/IP/${event.urlId}`,
             columns: [
@@ -215,7 +212,7 @@ export class EventsListManager {
                 },
                 {
                     name: "IsEnded",
-                    value: !event.isPlaying && event.currentPeriod === "90"
+                    value: isFixtureEnded
                 },
                 {
                     name: "HomeScore",
@@ -296,8 +293,15 @@ export class EventsListManager {
             ]
         };
 
-        await this.fixturesDataSheetUpdater.addOrUpdateFixture(row);
-        await this.livescoreRedisClient.setWithExpire(row.rowId, JSON.stringify(row, null, 4), 60);
+        this.fixturesDataSheetUpdater.addOrUpdateFixture(row);
+        this.livescoreRedisClient.setWithExpire(row.rowId, JSON.stringify(row, null, 4), 60);
+        if (isFixtureEnded) {
+            this.fixturesEndedPublisher.publish("fixtures.ended", {
+                eventId: event.id,
+                key: row.rowId
+            })
+        }
+
     }
 
     private async wait(ms) {
