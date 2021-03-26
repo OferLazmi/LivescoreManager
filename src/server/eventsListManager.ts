@@ -19,7 +19,7 @@ interface IStatResult {
 };
 
 export class EventsListManager {
-    private columnsCount: number = 21;
+    private columnsCount: number = 22;
     private appConfig: IAppConfig;
     private redisConfig: IRedisConfig;
     private rmqConfig: IRabbitMqConfig;
@@ -28,7 +28,6 @@ export class EventsListManager {
     private fixturesDataSheetUpdater: FixturesDataSheetUpdater;
     private queueManager: IQueueManager;
     private subscriber: IServiceBusSubscriber;
-    private fixturesEndedPublisher: IServiceBusPublisher;
 
     constructor() {
         this.redisConfig = ConfigurationManager.getRedisConfig();
@@ -74,9 +73,9 @@ export class EventsListManager {
                     console.error(`Redis error:`, error);
                 },
                 onKeyExpireCallback: async (key) => {
-                    // console.log("[database 2]: onKeyExpire", key);
+                    console.log("[database 2]: onKeyExpire", key);
                     if (this.fixturesDataSheetUpdater) {
-                        await this.fixturesDataSheetUpdater.clearRow(key);
+                        await this.fixturesDataSheetUpdater.clearRow(key, true);
                     }
                 },
                 onKeyInsertedCallback: async (key, value) => {
@@ -90,12 +89,7 @@ export class EventsListManager {
                     console.error(error);
                 }
             });
-            this.fixturesEndedPublisher = ServiceBusFactory.createPublisher({
-                url: this.rmqConfig.url,
-                errorCallback: (error) => {
-                    console.error(error);
-                }
-            });
+
             this.subscriber.subscribe(this.rmqConfig.exchangeName, async (topic, data) => {
                 try {
                     let eventDataInfo = JSON.parse(data.data);
@@ -203,11 +197,17 @@ export class EventsListManager {
         }
 
         const isFixtureEnded = !event.isPlaying && event.currentPeriod === "90";
+        const isFullTime = event.isPlaying && event.currentPeriod === "90";
+
         const row: GoogleSheetRowBase = {
-            rowId: `https://www.bet365.com/#/IP/${event.urlId}`,
+            rowId: event.id,
             columns: [
                 {
                     name: "FixtureId",
+                    value: event.id
+                },
+                {
+                    name: "Url",
                     value: `https://www.bet365.com/#/IP/${event.urlId}`
                 },
                 {
@@ -232,11 +232,11 @@ export class EventsListManager {
                 },
                 {
                     name: "HomeFTScore",
-                    value: goals.home
+                    value: isFullTime ? goals.home : null
                 },
                 {
                     name: "AwayFTScore",
-                    value: goals.away
+                    value: isFullTime ? goals.away : null
                 },
                 {
                     name: "HomeCorners",
@@ -256,11 +256,11 @@ export class EventsListManager {
                 },
                 {
                     name: "HomeCornersFT",
-                    value: corners.home
+                    value: isFullTime ? corners.home : null
                 },
                 {
                     name: "AwayCornersFT",
-                    value: corners.away
+                    value: isFullTime ? corners.away : null
                 },
                 {
                     name: "HomeYellowCard",
@@ -271,7 +271,7 @@ export class EventsListManager {
                     value: yellowCards.away
                 },
                 {
-                    name: "FixtHomeYellowCardHTureId",
+                    name: "HomeYellowCardHT",
                     value: yellowCards.homeHT
                 },
                 {
@@ -280,11 +280,11 @@ export class EventsListManager {
                 },
                 {
                     name: "HomeYellowCardFT",
-                    value: yellowCards.home
+                    value: isFullTime ? yellowCards.home : null
                 },
                 {
                     name: "AwayYellowCardFT",
-                    value: yellowCards.away
+                    value: isFullTime ? yellowCards.away : null
                 },
                 {
                     name: "LastUpdate",
@@ -294,14 +294,8 @@ export class EventsListManager {
         };
 
         this.fixturesDataSheetUpdater.addOrUpdateFixture(row);
-        this.livescoreRedisClient.setWithExpire(row.rowId, JSON.stringify(row, null, 4), 60);
-        if (isFixtureEnded) {
-            this.fixturesEndedPublisher.publish("fixtures.ended", {
-                eventId: event.id,
-                key: row.rowId
-            })
-        }
-
+        // this.livescoreRedisClient.setWithExpire(row.rowId, JSON.stringify(row, null, 4), 60);
+        this.livescoreRedisClient.set(row.rowId, JSON.stringify(row, null, 4));
     }
 
     private async wait(ms) {
