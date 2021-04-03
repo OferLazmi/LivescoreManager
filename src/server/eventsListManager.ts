@@ -197,6 +197,7 @@ export class EventsListManager {
         }
 
         const isFixtureEnded = !event.isPlaying && event.currentPeriod === "90";
+        const isHalfTimeBreak = event.currentPeriod === "45";
         const isFullTime = event.isPlaying && event.currentPeriod === "90";
 
         const row: GoogleSheetRowBase = {
@@ -224,11 +225,11 @@ export class EventsListManager {
                 },
                 {
                     name: "HomeHTScore",
-                    value: goals.homeHT
+                    value: isHalfTimeBreak ? goals.homeHT : null
                 },
                 {
                     name: "AwayHTScore",
-                    value: goals.awayHT
+                    value: isHalfTimeBreak ? goals.awayHT : null
                 },
                 {
                     name: "HomeFTScore",
@@ -248,11 +249,11 @@ export class EventsListManager {
                 },
                 {
                     name: "HomeCornersHT",
-                    value: corners.homeHT
+                    value: isHalfTimeBreak ? corners.homeHT : null
                 },
                 {
                     name: "AwayCornersHT",
-                    value: corners.awayHT
+                    value: isHalfTimeBreak ? corners.awayHT : null
                 },
                 {
                     name: "HomeCornersFT",
@@ -272,11 +273,11 @@ export class EventsListManager {
                 },
                 {
                     name: "HomeYellowCardHT",
-                    value: yellowCards.homeHT
+                    value: isHalfTimeBreak ? yellowCards.homeHT : null
                 },
                 {
                     name: "AwayYellowCardHT",
-                    value: yellowCards.awayHT
+                    value: isHalfTimeBreak ? yellowCards.awayHT : null
                 },
                 {
                     name: "HomeYellowCardFT",
